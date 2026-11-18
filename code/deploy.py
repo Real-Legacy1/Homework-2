@@ -1,7 +1,7 @@
 """Task: provision three end-to-end AWS pipelines entirely using boto3."""
 """Task: End-points: API Gateway, Lambda and DynamoDB"""
 
-import boto3
+import boto3, json
 from config import TLD_GROUPS, TABLE_SUFFIXES, ROUTES, METRIC_NAMESPACE
 
 # References AWS Docs
@@ -11,11 +11,104 @@ from config import TLD_GROUPS, TABLE_SUFFIXES, ROUTES, METRIC_NAMESPACE
 # https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/python/example_code/api-gateway/README.md
 
 def create_tables(dynamodb, prefix):
-    raise NotImplementedError
+    table_names = {}
+    table_arns = {}
+    for group, suffix in TABLE_SUFFIXES.items():
+        table_name = f"{prefix}-{suffix}"
+        table_names[group] = table_name
+        try:
+            dynamodb.describe_table(TableName=table_name)
+            print(f"Using existing table: {table_name}")
+        except dynamodb.exceptions.ResourceNotFoundException:
+            print(f"Table needs to be created: {table_name}")
+            dynamodb.create_table(
+                TableName=table_name,
+                KeySchema=[
+                    {"AttributeName": "id", "KeyType": "HASH"},
+                ],
+                AttributeDefinitions=[
+                    {"AttributeName": "id", "AttributeType": "S"},
+                ],
+                BillingMode="PAY_PER_REQUEST",
+            )
+        dynamodb.get_waiter("table_exists").wait(TableName=table_name)
+        table_arns[group] = dynamodb.describe_table(TableName=table_name)["Table"]["TableArn"]
+    return table_names, table_arns
 
 
 def create_lambda_execution_role(iam, prefix, table_arns):
-    raise NotImplementedError
+    """Create or reuse the Lambda role and configure its runtime permissions."""
+    if not table_arns:
+        raise ValueError("Table ARNs are required to configure DynamoDB permissions")
+
+    role_name = f"{prefix}-LambdaExecutionRole"
+    trust_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {"Service": "lambda.amazonaws.com"},
+                "Action": "sts:AssumeRole",
+            }
+        ],
+    }
+    try:
+        response = iam.get_role(RoleName=role_name)
+        print(f"Using existing role: {role_name}")
+    except iam.exceptions.NoSuchEntityException:
+        response = iam.create_role(
+            RoleName=role_name,
+            AssumeRolePolicyDocument=json.dumps(trust_policy),
+        )
+        print(f"Created role: {role_name}")
+
+    role_arn = response["Role"]["Arn"]
+    iam.get_waiter("role_exists").wait(RoleName=role_name)
+
+    # Ensure a reused project role also trusts Lambda.
+    iam.update_assume_role_policy(
+        RoleName=role_name,
+        PolicyDocument=json.dumps(trust_policy),
+    )
+
+    # AWS's basic execution policy permits writing Lambda logs.
+    partition = role_arn.split(":")[1]
+    iam.attach_role_policy(
+        RoleName=role_name,
+        PolicyArn=(
+            f"arn:{partition}:iam::aws:policy/service-role/"
+            "AWSLambdaBasicExecutionRole"
+        ),
+    )
+
+    # Only allow item writes to this project's tables and its metric namespace.
+    permissions_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "WritePipelineRecords",
+                "Effect": "Allow",
+                "Action": "dynamodb:PutItem",
+                "Resource": list(table_arns.values()),
+            },
+            {
+                "Sid": "PublishPipelineMetrics",
+                "Effect": "Allow",
+                "Action": "cloudwatch:PutMetricData",
+                "Resource": "*",
+                "Condition": {
+                    "StringEquals": {"cloudwatch:namespace": METRIC_NAMESPACE}
+                },
+            },
+        ],
+    }
+    # A stable policy name updates the same policy on subsequent deployments.
+    iam.put_role_policy(
+        RoleName=role_name,
+        PolicyName=f"{prefix}-PipelinePermissions",
+        PolicyDocument=json.dumps(permissions_policy),
+    )
+    return role_arn
 
 
 def package_lambda_source_code():

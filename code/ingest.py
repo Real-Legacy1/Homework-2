@@ -6,19 +6,41 @@ from urllib.parse import urlsplit
 from config import FEED_URL, TLD_GROUPS
 
 # URL: https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
+
 def parse_url(url):
-    """Task: extract protocol, hostname, public suffix, final TLD label, domain, subdomain, path"""
-    raise NotImplementedError
+    urls = urlsplit(url)
+    protocol = urls.scheme
+    hostname = urls.hostname
+    path = urls.path
+    extracted = tldextract.extract(url)
+    public_suffix = extracted.suffix
+    tld = public_suffix.split(".")[-1]
+    sld = extracted.domain
+    subdomain = extracted.subdomain
+    return {
+    "url": url,
+    "protocol": protocol,
+    "hostname": hostname,
+    "path": path,
+    "public_suffix": public_suffix, 
+    "tld": tld,
+    "second_level_domain": sld,
+    "third_level_domain": subdomain
+}
 
 
 def classify_tld(tld):
-    """Task: return classified tld data"""
-    raise NotImplementedError
+    for i in TLD_GROUPS:
+        if tld in TLD_GROUPS[i]:
+            return i
+    return 'unknown'
 
 
 def submit_record(base_url, group, record):
     """Task: submit post request to f'{base_url}/{group}'"""
-    raise NotImplementedError
+    response = requests.post(f"{base_url.rstrip('/')}/{group}", json=record, timeout=15)
+    response.raise_for_status()
+    return response
 
 
 def main():
@@ -26,7 +48,20 @@ def main():
     parser.add_argument('--limit', type=int, default=100)
     args = parser.parse_args()
     # Task:integrate the above parse and post request API 
-    raise NotImplementedError
+    feed_url = FEED_URL
+    response = requests.get(feed_url, timeout=15)
+    response.raise_for_status()
+    urls = response.text.strip().splitlines()
+    urls = [line.strip() for line in urls if line.strip()]
+    unmatched = 0
+    for url in urls[:args.limit]:
+        parsed = parse_url(url)
+        group = classify_tld(parsed['tld'])
+        if group == 'unknown':
+            unmatched += 1
+            continue
+        print(parsed['tld'], group)
+    print(f"Unmatched TLDs: {unmatched} out of {args.limit}")
 
 
 if __name__ == '__main__':
