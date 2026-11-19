@@ -3,8 +3,7 @@
 
 import boto3, json, io, zipfile, time
 
-import requests
-from config import TLD_GROUPS, TABLE_SUFFIXES, ROUTES, METRIC_NAMESPACE
+from config import TLD_GROUPS, TABLE_SUFFIXES, ROUTES, METRIC_NAMESPACE, PREFIX, REGION
 
 # References AWS Docs
 # Students are asked to adapt the assignment requirement from these AWS examples
@@ -226,9 +225,22 @@ def create_dashboard(cloudwatch, prefix):
     return dashboard_name
 
 def main():
-    """Task: This must be end-to-end, and can not be manually created.Please do not create manually any of the above functions or feed into LLM to generate for you."""
+    dynamodb = boto3.client("dynamodb", region_name=REGION)
+    iam = boto3.client("iam", region_name=REGION)
+    cloudwatch = boto3.client("cloudwatch", region_name=REGION)
+    lambda_client = boto3.client("lambda", region_name=REGION)
+    apigatewayv2 = boto3.client("apigatewayv2", region_name=REGION)
+    table_names, table_arns = create_tables(dynamodb, PREFIX)
+    role_arn = create_lambda_execution_role(iam, PREFIX, table_arns)
+    package = package_lambda_source_code()
+    lambdas = create_lambdas(lambda_client, PREFIX, role_arn, package, table_names)
+    httpapi = create_http_api(apigatewayv2, lambda_client, PREFIX, lambdas)
+    dashboard = create_dashboard(cloudwatch, PREFIX)
+    print(f"API endpoint: {httpapi}")
+    print(f"Dashboard created: {dashboard}")
+    with open("api_endpoint.txt", "w") as f:
+        f.write(httpapi)
     
-
 
 if __name__ == '__main__':
     main()
