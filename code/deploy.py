@@ -177,7 +177,7 @@ def create_http_api(apigatewayv2, lambda_client, prefix, function_arns):
     try:
         apigatewayv2.create_stage(ApiId=api_id, StageName='$default', AutoDeploy=True)
     except apigatewayv2.exceptions.ConflictException:
-        print(f"Deployment already exists for API: {api_name}")
+        print(f"stage already exists for API: {api_name}")
     return apiendpoint
 
     
@@ -188,12 +188,46 @@ def create_http_api(apigatewayv2, lambda_client, prefix, function_arns):
 
 
 def create_dashboard(cloudwatch, prefix):
-    raise NotImplementedError
+    dashboard_name = f"{prefix}-homew2-dashboard"
+    try:
+        cloudwatch.get_dashboard(DashboardName=dashboard_name)
+        print(f"Using existing dashboard: {dashboard_name}")
+    except cloudwatch.exceptions.DashboardNotFoundError:
+        print(f"Dashboard needs to be created: {dashboard_name}")
+        dashboard_body = {
+            "widgets": [
+                {
+                    "type": "metric",
+                    "width": 12,
+                    "height": 6,
+                    "properties": {
+                        "metrics": [
+                            [METRIC_NAMESPACE, "IngestedCount", "Pipeline", "generic", "TLD", "com"],
+                            [METRIC_NAMESPACE, "IngestedCount", "Pipeline", "generic", "TLD", "org"],
+                            [METRIC_NAMESPACE, "IngestedCount", "Pipeline", "generic", "TLD", "net"],
+                            [METRIC_NAMESPACE, "IngestedCount", "Pipeline", "country", "TLD", "us"],
+                            [METRIC_NAMESPACE, "IngestedCount", "Pipeline", "country", "TLD", "uk"],
+                            [METRIC_NAMESPACE, "IngestedCount", "Pipeline", "country", "TLD", "de"],
+                            [METRIC_NAMESPACE, "IngestedCount", "Pipeline", "country", "TLD", "np"],
+                            [METRIC_NAMESPACE, "IngestedCount", "Pipeline", "selected", "TLD", "xyz"],
+                            [METRIC_NAMESPACE, "IngestedCount", "Pipeline", "selected", "TLD", "top"],
+                            [METRIC_NAMESPACE, "IngestedCount", "Pipeline", "selected", "TLD", "shop"]
 
+                        ],
+                        "period": 300,
+                        "stat": "Sum",
+                        "region": cloudwatch.meta.region_name,
+                        "title": "Pipeline Metrics"
+                    }
+                }
+            ]
+        }
+        cloudwatch.put_dashboard(DashboardName=dashboard_name, DashboardBody=json.dumps(dashboard_body))
+    return dashboard_name
 
 def main():
     """Task: This must be end-to-end, and can not be manually created.Please do not create manually any of the above functions or feed into LLM to generate for you."""
-    raise NotImplementedError
+    
 
 
 if __name__ == '__main__':

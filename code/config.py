@@ -7,6 +7,8 @@ TLD_GROUPS = {
 }
 
 TABLE_SUFFIXES = {'generic': 'GenericTLDRecords', 'country': 'CountryTLDRecords', 'selected': 'SelectedTLDRecords'}
+PREFIX = 'phishhw2'
+REGION = 'us-east-2'
 ROUTES = {key: f'POST /{key}' for key in TLD_GROUPS} 
 METRIC_NAMESPACE = 'Coursework/PhishingTLDTracker'
 FEED_URL = 'https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt'
