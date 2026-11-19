@@ -191,7 +191,7 @@ def create_dashboard(cloudwatch, prefix):
     try:
         cloudwatch.get_dashboard(DashboardName=dashboard_name)
         print(f"Using existing dashboard: {dashboard_name}")
-    except cloudwatch.exceptions.DashboardNotFoundError:
+    except cloudwatch.exceptions.ResourceNotFound:
         print(f"Dashboard needs to be created: {dashboard_name}")
         dashboard_body = {
             "widgets": [
