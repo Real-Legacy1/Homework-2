@@ -1,7 +1,7 @@
 """Task: provision three end-to-end AWS pipelines entirely using boto3."""
 """Task: End-points: API Gateway, Lambda and DynamoDB"""
 
-import boto3, json
+import boto3, json, io, zipfile
 from config import TLD_GROUPS, TABLE_SUFFIXES, ROUTES, METRIC_NAMESPACE
 
 # References AWS Docs
@@ -37,82 +37,57 @@ def create_tables(dynamodb, prefix):
 
 
 def create_lambda_execution_role(iam, prefix, table_arns):
-    """Create or reuse the Lambda role and configure its runtime permissions."""
-    if not table_arns:
-        raise ValueError("Table ARNs are required to configure DynamoDB permissions")
-
-    role_name = f"{prefix}-LambdaExecutionRole"
+    role_name = f"{prefix}-homew2"
     trust_policy = {
-        "Version": "2012-10-17",
-        "Statement": [
+    "Version": "2012-10-17",
+    "Statement": [
             {
                 "Effect": "Allow",
-                "Principal": {"Service": "lambda.amazonaws.com"},
-                "Action": "sts:AssumeRole",
-            }
-        ],
+                "Principal": {
+                    "Service": "lambda.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+             }
+        ]
     }
+    response = ""
     try:
         response = iam.get_role(RoleName=role_name)
         print(f"Using existing role: {role_name}")
     except iam.exceptions.NoSuchEntityException:
-        response = iam.create_role(
-            RoleName=role_name,
-            AssumeRolePolicyDocument=json.dumps(trust_policy),
-        )
-        print(f"Created role: {role_name}")
-
+        print(f"Role needs to be created: {role_name}")
+        response = iam.create_role(RoleName=role_name, AssumeRolePolicyDocument=json.dumps(trust_policy))
     role_arn = response["Role"]["Arn"]
-    iam.get_waiter("role_exists").wait(RoleName=role_name)
-
-    # Ensure a reused project role also trusts Lambda.
-    iam.update_assume_role_policy(
-        RoleName=role_name,
-        PolicyDocument=json.dumps(trust_policy),
-    )
-
-    # AWS's basic execution policy permits writing Lambda logs.
-    partition = role_arn.split(":")[1]
-    iam.attach_role_policy(
-        RoleName=role_name,
-        PolicyArn=(
-            f"arn:{partition}:iam::aws:policy/service-role/"
-            "AWSLambdaBasicExecutionRole"
-        ),
-    )
-
-    # Only allow item writes to this project's tables and its metric namespace.
+    iam.attach_role_policy(RoleName=role_name, PolicyArn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")
     permissions_policy = {
         "Version": "2012-10-17",
         "Statement": [
             {
-                "Sid": "WritePipelineRecords",
                 "Effect": "Allow",
-                "Action": "dynamodb:PutItem",
-                "Resource": list(table_arns.values()),
+                "Action": [
+                    "dynamodb:PutItem",
+                ],
+                "Resource": list(table_arns.values())
             },
             {
-                "Sid": "PublishPipelineMetrics",
                 "Effect": "Allow",
-                "Action": "cloudwatch:PutMetricData",
-                "Resource": "*",
-                "Condition": {
-                    "StringEquals": {"cloudwatch:namespace": METRIC_NAMESPACE}
-                },
-            },
-        ],
+                "Action": [
+                    "cloudwatch:PutMetricData",
+                ],
+                "Resource": "*"
+            }
+        ]
     }
-    # A stable policy name updates the same policy on subsequent deployments.
-    iam.put_role_policy(
-        RoleName=role_name,
-        PolicyName=f"{prefix}-PipelinePermissions",
-        PolicyDocument=json.dumps(permissions_policy),
-    )
+    iam.put_role_policy(RoleName=role_name, PolicyName=f"{prefix}-homew2-permissions", PolicyDocument=json.dumps(permissions_policy))
     return role_arn
 
 
 def package_lambda_source_code():
-    raise NotImplementedError
+    bytes_io = io.BytesIO()
+    with zipfile.ZipFile(bytes_io, mode='w', compression=zipfile.ZIP_DEFLATED) as zipf:
+        zipf.write('lambda_function.py', arcname='lambda_function.py')
+    return bytes_io.getvalue()
+
 
 def create_lambdas(lambda_client, prefix, role_arn, zip_bytes, table_names):
     raise NotImplementedError
