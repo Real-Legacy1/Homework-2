@@ -4,6 +4,7 @@
 import boto3, json, io, zipfile, time
 
 from config import TLD_GROUPS, TABLE_SUFFIXES, ROUTES, METRIC_NAMESPACE, PREFIX, REGION
+from pathlib import Path
 
 # References AWS Docs
 # Students are asked to adapt the assignment requirement from these AWS examples
@@ -102,8 +103,19 @@ def create_lambdas(lambda_client, prefix, role_arn, zip_bytes, table_names):
         }
         try:
             response = lambda_client.get_function(FunctionName=lambda_name)
+            
             print(f"Using existing Lambda function: {lambda_name}")
             response = lambda_client.update_function_code(FunctionName=lambda_name, ZipFile=zip_bytes)
+            lambda_client.get_waiter("function_updated").wait(
+                FunctionName=lambda_name
+            )
+            lambda_client.update_function_configuration(
+                FunctionName=lambda_name,
+                Timeout=10
+            )
+            lambda_client.get_waiter("function_updated").wait(
+                FunctionName=lambda_name
+            )
             table_arns[group] = response["FunctionArn"]
         except lambda_client.exceptions.ResourceNotFoundException:
             
@@ -113,6 +125,7 @@ def create_lambdas(lambda_client, prefix, role_arn, zip_bytes, table_names):
                     response = lambda_client.create_function(
                         FunctionName=lambda_name,
                         Runtime='python3.13',
+                        timeout=10,
                         Role=role_arn,
                         Handler='lambda_function.lambda_handler',
                         Code={'ZipFile': zip_bytes},

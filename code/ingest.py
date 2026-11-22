@@ -4,6 +4,7 @@ import requests
 import tldextract
 from urllib.parse import urlsplit
 from config import FEED_URL, TLD_GROUPS
+from pathlib import Path
 
 # URL: https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
 
@@ -48,20 +49,33 @@ def main():
     parser.add_argument('--limit', type=int, default=100)
     args = parser.parse_args()
     # Task:integrate the above parse and post request API 
+    endpoint_file = Path(__file__).resolve().parent / "api_endpoint.txt"
+    base_url = endpoint_file.read_text().strip()
     feed_url = FEED_URL
     response = requests.get(feed_url, timeout=15)
     response.raise_for_status()
     urls = response.text.strip().splitlines()
     urls = [line.strip() for line in urls if line.strip()]
     unmatched = 0
+    successful = 0
+    failed = 0
     for url in urls[:args.limit]:
         parsed = parse_url(url)
         group = classify_tld(parsed['tld'])
+
         if group == 'unknown':
             unmatched += 1
             continue
-        print(parsed['tld'], group)
-    print(f"Unmatched TLDs: {unmatched} out of {args.limit}")
+
+        try:
+            submit_record(base_url, group, parsed)
+            successful += 1
+        except requests.RequestException as error:
+            failed += 1
+            print(f"Submission failed for {group}: {error}")
+    processed = successful + failed + unmatched
+    print(f"Processed: {processed}")
+    print(f"Successful: {successful}, Failed: {failed}, Unmatched: {unmatched}")
 
 
 if __name__ == '__main__':
